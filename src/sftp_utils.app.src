@@ -1,0 +1,6 @@
+{application, sftp_utils,
+  [ {description,  ""}
+  , {vsn,          git}
+  , {registered,   []}
+  , {applications, [kernel, stdlib, crypto, ssh]}
+  ]}.
