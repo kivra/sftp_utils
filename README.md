@@ -1,4 +1,4 @@
-# sftp_utils (v0.1.0)
+# sftp_utils (v0.2.0)
 Wrapper around ssh_sftp to simplify some common tasks. A new connection
 is set up for each command.
 
