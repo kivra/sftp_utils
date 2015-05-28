@@ -177,10 +177,11 @@ do_write_file(Pid, Timeout, Handle, FD) ->
   end.
 
 with_connection(F, Config) ->
-  {host, Host}       = lists:keyfind(host,    1, Config),
-  {port, Port}       = lists:keyfind(port,    1, Config),
-  {timeout, Timeout} = lists:keyfind(timeout, 1, Config),
-  ConnConf =
+  {ok, Host}    = lget(Config, host),
+  {ok, Port}    = lget(Config, port),
+  {ok, Timeout} = lget(Config, timeout),
+  Retries       = lget(Config, retries, 2), %% Two retries by default
+  ConnConf      =
     lists:foldl(fun({user, _} = E, Acc)                  -> [E|Acc];
                    ({password, _} = E, Acc)              -> [E|Acc];
                    ({connect_timeout, _} = E, Acc)       -> [E|Acc];
@@ -188,20 +189,46 @@ with_connection(F, Config) ->
                    (_, Acc)                              -> Acc
                 end,
                 [], Config),
-  case ssh:connect(Host, Port, ConnConf, Timeout) of
-    {ok, ConnectionRef} ->
-      case ssh_sftp:start_channel(ConnectionRef) of
-        {ok, Pid} ->
-          Res = F(Pid, Timeout),
-          ok = ssh_sftp:stop_channel(Pid),
-          ok = ssh:close(ConnectionRef),
-          Res;
+  retry(
+    fun() ->
+      case ssh:connect(Host, Port, ConnConf, Timeout) of
+        {ok, ConnectionRef} ->
+          case ssh_sftp:start_channel(ConnectionRef) of
+            {ok, Pid} ->
+              Res = F(Pid, Timeout),
+              ok = ssh_sftp:stop_channel(Pid),
+              ok = ssh:close(ConnectionRef),
+              {ok, Res};
+            {error, _} = Err ->
+              ok = ssh:close(ConnectionRef),
+              Err
+          end;
         {error, _} = Err ->
-          ok = ssh:close(ConnectionRef),
           Err
-      end;
-    {error, _} = Err ->
-      Err
+      end
+    end, timer:seconds(1), Retries).
+
+retry(F, T, N) ->
+  retry(F(), F, T, N).
+
+retry({ok, Res}, _F, _T, _N) ->
+  Res;
+retry({error, _} = Err, _F, _T, 0) ->
+  Err;
+retry({error, _}, F, T, N) when N > 0 ->
+  timer:sleep(T),
+  retry(F(), F, T, N-1).
+
+lget(L, K) ->
+  case lists:keyfind(K, 1, L) of
+    {K, V} -> {ok, V};
+    false  -> {error, notfound}
+  end.
+
+lget(L, K, Def) ->
+  case lget(L, K) of
+    {ok, V}           -> V;
+    {error, notfound} -> Def
   end.
 
 %%%_* Tests ============================================================

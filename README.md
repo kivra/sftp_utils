@@ -7,6 +7,8 @@ sftp_utils is released under the terms of the [MIT](http://en.wikipedia.org/wiki
 copyright 2012-2014 Kivra
 
 ## tl;dr
+By default this library will retry *two* times resulting in a total of *three* tries.
+
 ### Examples
 Example usage:
 ```erlang
@@ -18,6 +20,7 @@ Config = [ {host,                  "somehost"}
          , {connect_timeout,       5000}
          , {user_interaction,      false}
          , {silently_accept_hosts, true}
+         , {retries,               2}
          ],
 
 %% list a dir
