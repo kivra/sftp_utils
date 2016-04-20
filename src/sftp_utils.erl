@@ -32,6 +32,8 @@
 -export([read_file_info/2]).
 -export([ensure_dir/2]).
 
+-include_lib("kernel/include/file.hrl").
+
 %%%_ * Types -----------------------------------------------------------
 -type opt()  :: {host,                  string()}
               | {port,                  non_neg_integer()}
@@ -53,7 +55,15 @@ read_file(From, To, Config) ->
           {ok, Handle} ->
             case file:open(To, [write, binary]) of
               {ok, FD} ->
-                do_read_file(Pid, Timeout, Handle, FD);
+                Res = case ssh_sftp:read_file_info(Pid, From, Timeout) of
+                        {ok, #file_info{size = Size}} ->
+                          do_read_file(Pid, Timeout, Handle, FD, Size);
+                        {error, _} = Err ->
+                          Err
+                      end,
+                file:close(FD),
+                ssh_sftp:close(Pid, Handle, Timeout),
+                Res;
               {error, _} = Err ->
                 ssh_sftp:close(Pid, Handle, Timeout),
                 Err
@@ -70,7 +80,10 @@ write_file(To, From, Config) ->
           {ok, FD} ->
             case ssh_sftp:open(Pid, To, [write, binary], Timeout) of
               {ok, Handle} ->
-                do_write_file(Pid, Timeout, Handle, FD);
+                Res = do_write_file(Pid, Timeout, Handle, FD),
+                file:close(FD),
+                ssh_sftp:close(Pid, Handle, Timeout),
+                Res;
               {error, _} = Err ->
                 file:close(FD),
                 Err
@@ -134,46 +147,75 @@ ensure_dir(Path, Config) ->
 %%-define(buf_size, 262144).
 %% -define(buf_size, 131072).
 -define(buf_size, 65536).
-do_read_file(Pid, Timeout, Handle, FD) ->
-  case ssh_sftp:read(Pid, Handle, ?buf_size) of
-    {ok, Data} ->
+
+do_read_file(Pid, Timeout, Handle, FD, Size) ->
+  case send_async_reads(Pid, Handle, Size, 0, queue:new()) of
+    {ok, Refs}       -> receive_async_reads(FD, Timeout, Refs);
+    {error, _} = Err -> Err
+  end.
+
+send_async_reads(_, _, Size, Pos, Refs) when Size < (Pos - ?buf_size) ->
+  {ok, Refs};
+send_async_reads(Pid, Handle, Size, Pos, Refs) ->
+  case ssh_sftp:apread(Pid, Handle, Pos, ?buf_size) of
+    {async, N} ->
+      send_async_reads(Pid, Handle, Size, Pos+?buf_size, queue:in(N, Refs));
+    {error, Error} ->
+      {error, Error}
+  end.
+
+receive_async_reads(FD, Timeout, Refs0) ->
+  {{value, Ref}, Refs} = queue:out(Refs0),
+  receive
+    {async_reply, Ref, {ok, Data}} ->
       case file:write(FD, Data) of
-        ok ->
-          do_read_file(Pid, Timeout, Handle, FD);
-        {error, _} = Err ->
-          file:close(FD),
-          ssh_sftp:close(Pid, Handle, Timeout),
-          Err
+        ok               -> receive_async_reads(FD, Timeout, Refs);
+        {error, _} = Err -> Err
       end;
-    {error, _} = Err ->
-      file:close(FD),
-      ssh_sftp:close(Pid, Handle, Timeout),
+    {async_reply, Ref, {error, _} = Err} ->
       Err;
-    eof ->
-      ok = file:close(FD),
-      ok = ssh_sftp:close(Pid, Handle, Timeout),
+    {async_reply, Ref, eof} ->
       ok
+  after
+    Timeout -> {error, timeout}
   end.
 
 do_write_file(Pid, Timeout, Handle, FD) ->
+  case send_async_writes(Pid, Handle, FD, 0, queue:new()) of
+    {ok, Refs}       -> receive_async_writes(Timeout, Refs);
+    {error, _} = Err -> Err
+  end.
+
+send_async_writes(Pid, Handle, FD, Pos, Refs0) ->
   case file:read(FD, ?buf_size) of
     {ok, Data} ->
-      case ssh_sftp:write(Pid, Handle, Data, Timeout) of
-        ok ->
-          do_write_file(Pid, Timeout, Handle, FD);
+      case ssh_sftp:apwrite(Pid, Handle, Pos, Data) of
+        {async, Ref} ->
+          NextPos = Pos + byte_size(Data),
+          Refs    = queue:in(Ref, Refs0),
+          send_async_writes(Pid, Handle, FD, NextPos, Refs);
         {error, _} = Err ->
-          file:close(FD),
-          ssh_sftp:close(Pid, Handle, Timeout),
           Err
       end;
     {error, _} = Err ->
-      file:close(FD),
-      ssh_sftp:close(Pid, Handle, Timeout),
       Err;
     eof ->
-      ok = file:close(FD),
-      ok = ssh_sftp:close(Pid, Handle, Timeout),
-      ok
+      {ok, Refs0}
+  end.
+
+receive_async_writes(Timeout, Refs0) ->
+  case queue:out(Refs0) of
+    {empty, _} ->
+      ok;
+    {{value, Ref}, Refs} ->
+      receive
+        {async_reply, Ref, ok} ->
+          receive_async_writes(Timeout, Refs);
+        {async_reply, Ref, {error, _} = Err} ->
+          Err
+      after
+        Timeout -> {error, timeout}
+      end
   end.
 
 with_connection(F, Config) ->
