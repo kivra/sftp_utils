@@ -27,7 +27,7 @@
 
 {application, sftp_utils,
   [ {description,  "Erlang SFTP Utils"}
-  , {vsn,          "0.2.0"}
+  , {vsn,          "0.2.1"}
   , {registered,   []}
   , {applications, [kernel, stdlib, crypto, ssh]}
   , {modules,      []}
