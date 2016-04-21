@@ -1,5 +1,5 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%% Copyright (c) 2012-2014 Kivra
+%%% Copyright (c) 2012-2016 Kivra
 %%%
 %%% Permission to use, copy, modify, and/or distribute this software for any
 %%% purpose with or without fee is hereby granted, provided that the above
@@ -113,7 +113,7 @@ list_dir(Dir, Config) ->
         ssh_sftp:list_dir(Pid, Dir, Timeout)
     end, Config).
 
--spec read_file_info(string(), opts()) -> {ok, record()} | {error, term()}.
+-spec read_file_info(string(), opts()) -> {ok, #file_info{}} | {error, term()}.
 read_file_info(Path, Config) ->
   with_connection(
     fun(Pid, Timeout) ->
