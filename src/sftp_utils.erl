@@ -222,6 +222,9 @@ with_connection(F, Config) ->
   {ok, Host}    = lget(Config, host),
   {ok, Port}    = lget(Config, port),
   {ok, Timeout} = lget(Config, timeout),
+  SftpConfigs   = lists:filter(fun({sftp_vsn, _}) -> true;
+                                  (_)             -> false
+                               end, Config),
   Retries       = lget(Config, retries, 2), %% Two retries by default
   ConnConf      =
     lists:foldl(fun({user, _} = E, Acc)                  -> [E|Acc];
@@ -235,7 +238,7 @@ with_connection(F, Config) ->
     fun() ->
       case ssh:connect(Host, Port, ConnConf, Timeout) of
         {ok, ConnectionRef} ->
-          case ssh_sftp:start_channel(ConnectionRef) of
+          case ssh_sftp:start_channel(ConnectionRef, SftpConfigs) of
             {ok, Pid} ->
               Res = F(Pid, Timeout),
               ok = ssh_sftp:stop_channel(Pid),
