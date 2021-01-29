@@ -1,10 +1,10 @@
-# sftp_utils (v0.2.2)
+# sftp_utils
 Wrapper around ssh_sftp to simplify some common tasks. A new connection
 is set up for each command.
 
 sftp_utils is released under the terms of the [MIT](http://en.wikipedia.org/wiki/MIT_License) license
 
-copyright 2012-2016 Kivra
+copyright 2012-2021 Kivra
 
 ## tl;dr
 By default this library will retry *two* times resulting in a total of *three* tries.
