@@ -30,6 +30,7 @@
 -export([rename/3]).
 -export([list_dir/2]).
 -export([read_file_info/2]).
+-export([write_file_info/3]).
 -export([ensure_dir/2]).
 
 -include_lib("kernel/include/file.hrl").
@@ -118,6 +119,13 @@ read_file_info(Path, Config) ->
   with_connection(
     fun(Pid, Timeout) ->
         ssh_sftp:read_file_info(Pid, Path, Timeout)
+    end, Config).
+
+-spec write_file_info(string(), #file_info{}, opts()) -> ok | {error, term()}.
+write_file_info(Path, FileInfo, Config) ->
+  with_connection(
+    fun(Pid, Timeout) ->
+        ssh_sftp:write_file_info(Pid, Path, FileInfo, Timeout)
     end, Config).
 
 -spec ensure_dir(string(), opts()) -> ok | {error, term()}.
